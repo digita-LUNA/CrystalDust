@@ -266,7 +266,7 @@ static void Task_NewGameOakSpeech_ShrinkBG2(u8);
 static void Task_NewGameOakSpeech_FadePlayerToBlack(u8);
 static void Task_NewGameOakSpeech_FadePlayerToWhite(u8);
 static void Task_NewGameOakSpeech_Cleanup(u8);
-static void SpriteCB_Null();
+static void SpriteCB_Null(struct Sprite *);
 static void Task_NewGameOakSpeech_ReturnFromNamingScreenShowTextbox(u8);
 static void MainMenu_FormatSavegamePlayer(void);
 static void MainMenu_FormatSavegamePokedex(void);

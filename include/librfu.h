@@ -316,7 +316,7 @@ struct STWIStatus
     u8 recoveryCount;
     u8 unk_16;
     u8 unk_17;
-    void (*callbackM)();
+    void (*callbackM)(...);
     void (*callbackS)(u16);
     void (*callbackID)(void);
     union RfuPacket *txPacket;

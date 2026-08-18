@@ -3,11 +3,11 @@
 [![Actions Status](https://github.com/huderlem/poryscript/workflows/Go/badge.svg)](https://github.com/huderlem/poryscript/actions) [![codecov](https://codecov.io/gh/huderlem/poryscript/branch/master/graph/badge.svg)](https://codecov.io/gh/huderlem/poryscript)
 
 
-Use the online [Poryscript Playground](http://www.huderlem.com/poryscript-playground/) to test it out.
+Use the online [Poryscript Playground](http://www.huderlem.com/poryscript-playground/) to test it out, and install the [VS Code Poryscript extension](https://marketplace.visualstudio.com/items?itemName=karathan.poryscript) to make writing scripts even easier!
 
 Poryscript is a higher-level scripting language that compiles into the scripting language used in [pokeemerald](https://github.com/pret/pokeemerald), [pokefirered](https://github.com/pret/pokefirered), and [pokeruby](https://github.com/pret/pokeruby). It makes scripting faster and easier. Some advantages of using Poryscript are:
 1. Branching control flow with `if`, `elif`, `else`, `while`, `do...while`, and `switch` statements.
-2. Inline text
+2. Inline text with automatic line-break formatting for multi-line strings
 3. Auto-formatting text to fit within the in-game text box
 4. Better map script organization
 
@@ -15,7 +15,10 @@ View the [Changelog](https://github.com/huderlem/poryscript/blob/master/CHANGELO
 
 **Table of Contents**
 - [Usage](#usage)
+  * [Basic Installation](#basic-installation)
+  * [Install as a Git Submodule](#install-as-a-git-submodule)
   * [Convert Existing Scripts](#convert-existing-scripts)
+  * [Using Poryscript in Your Favorite IDE or Text Editor](#extensions)
 - [Poryscript Syntax (How to Write Scripts)](#poryscript-syntax-how-to-write-scripts)
   * [`script` Statement](#script-statement)
     + [Boolean Expressions](#boolean-expressions)
@@ -25,6 +28,9 @@ View the [Changelog](https://github.com/huderlem/poryscript/blob/master/CHANGELO
     + [Early-Exiting a Script](#early-exiting-a-script)
     + [`switch` Statement](#switch-statement)
     + [Labels](#labels)
+  * [Strings](#strings)
+    + [Auto Strings](#auto-strings)
+    + [Concatenated Strings](#concatenated-strings)
   * [`text` Statement](#text-statement)
     + [Automatic Text Formatting](#automatic-text-formatting)
     + [Custom Text Encoding](#custom-text-encoding)
@@ -35,8 +41,10 @@ View the [Changelog](https://github.com/huderlem/poryscript/blob/master/CHANGELO
   * [Comments](#comments)
   * [Constants](#constants)
   * [Scope Modifiers](#scope-modifiers)
+  * [AutoVar Commands](#autovar-commands)
   * [Compile-Time Switches](#compile-time-switches)
   * [Optimization](#optimization)
+  * [Line Markers](#line-markers)
 - [Local Development](#local-development)
   * [Building from Source](#building-from-source)
   * [Running the tests](#running-the-tests)
@@ -51,6 +59,8 @@ Poryscript is a command-line program.  It reads an input script and outputs the 
 ```
 > ./poryscript -h
 Usage of poryscript:
+  -cc string
+        command config JSON file (default "command_config.json")
   -f string
         set default font id (leave empty to use default defined in font config file)
   -fc string
@@ -60,6 +70,8 @@ Usage of poryscript:
         input poryscript file (leave empty to read from standard input)
   -l int
         set default line length in pixels for formatted text (uses font config file for default)
+  -lm
+        include line markers in output (enables more helpful error messages when compiling the ROM). (To disable, use '-lm=false') (default true)
   -o string
         output script file (leave empty to write to standard output)
   -optimize
@@ -74,28 +86,30 @@ Convert a `.pory` script to a compiled `.inc` script, which can be directly incl
 ./poryscript -i data/scripts/myscript.pory -o data/scripts/myscript.inc
 ```
 
+## Basic Installation
 To automatically convert your Poryscript scripts when compiling a decomp project, perform these two steps:
-1. Create a new `tools/poryscript/` directory, and add the `poryscript` command-line executable tool to it. Also copy `font_config.json` to the same location.
+1. Create a new `tools/poryscript/` directory, and add the `poryscript` command-line executable tool to it. If you are using WSL, download the `poryscript-linux.zip` binary. Also copy `command_config.json` and `font_config.json` to the same location.
 ```
 # For example, on Windows, place the files here.
 pokeemerald/tools/poryscript/poryscript.exe
+pokeemerald/tools/poryscript/command_config.json
 pokeemerald/tools/poryscript/font_config.json
 ```
-It's also a good idea to add `tools/poryscript` to your `.gitignore` before your next commit.
+It's also a good idea to add the poryscript binary to your `.gitignore` before your next commit. The config files _should_ be tracked by Git--therefore, don't add them to the `.gitignore`.
 
 2. Update the Makefile with these changes (Note, don't add the `+` symbol at the start of the lines. That's just to show the line is being added.):
 ```diff
-FIX := tools/gbafix/gbafix$(EXE)
-MAPJSON := tools/mapjson/mapjson$(EXE)
-JSONPROC := tools/jsonproc/jsonproc$(EXE)
-+ SCRIPT := tools/poryscript/poryscript$(EXE)
+FIX       := $(TOOLS_DIR)/gbafix/gbafix$(EXE)
+MAPJSON   := $(TOOLS_DIR)/mapjson/mapjson$(EXE)
+JSONPROC  := $(TOOLS_DIR)/jsonproc/jsonproc$(EXE)
++ SCRIPT    := $(TOOLS_DIR)/poryscript/poryscript$(EXE)
 ```
 ```diff
-mostlyclean: tidynonmodern tidymodern
-	...
-	rm -f $(AUTO_GEN_TARGETS)
-	@$(MAKE) clean -C libagbsyscall
-+	rm -f $(patsubst %.pory,%.inc,$(shell find data/ -type f -name '*.pory'))
+include audio_rules.mk
+
++AUTO_GEN_TARGETS += $(patsubst %.pory,%.inc,$(shell find data/ -type f -name '*.pory'))
+
+generated: $(AUTO_GEN_TARGETS)
 ```
 ```diff
 %.s: ;
@@ -105,48 +119,63 @@ mostlyclean: tidynonmodern tidymodern
 + %.pory: ;
 ```
 ```diff
-sound/%.bin: sound/%.aif ; $(AIF) $< $@
-+ data/%.inc: data/%.pory; $(SCRIPT) -i $< -o $@ -fc tools/poryscript/font_config.json
+%.rl:     %      ; $(GFX) $< $@
++ data/%.inc: data/%.pory; $(SCRIPT) -i $< -o $@ -fc tools/poryscript/font_config.json -cc tools/poryscript/command_config.json
 ```
 
-## Convert Existing Scripts
-If you're working on a large project, you may want to convert all of the existing `scripts.inc` files to their `scripts.pory` equivalents. Since there are a large number of script files in the Gen 3 projects, you can save yourself a lot of time by following these instructions. **Again, this is completely optional, and you would only want to perform this bulk conversion if you're emabarking on large project where it would be useful to have all the existing scripts setup as Poryscript files.**
+## Install as a Git Submodule
+Users may wish to install Poryscript as a dependency of their project if they work with other collaborators or wish to use Github's Continuous Integration. To accomplish this, we can integrate the tool as a [Git submodule](https://git-scm.com/book/en/v2/Git-Tools-Submodules). This has an additional benefit of automatically rebuilding Poryscript from source when bumping to a new version.
 
-<details>
-  <summary>Click Here to View Instructions</summary>
+1. Initialize the Git submodule. If you use a fork of Poryscript to implement custom features, replace the `https://github.com/huderlem/poryscript` URL with the appropriate URL for your fork.
 
-  Convert all of your projects old map `scripts.inc` files into new `scripts.pory` files while maintaining the old scripts:
+```bash
+cd path/to/your/pokeemerald
+git submodule add https://github.com/huderlem/poryscript tools/poryscript
+```
 
-  1. Create a file in your `pokeemerald/` directory named `convert_inc.sh` with the following content:
-     ```
-     #!/bin/bash
+2. Make the following changes to `make_tools.mk`:
 
-     for directory in data/maps/* ; do
-     	pory_exists=$(find $directory -name $"scripts.pory" | wc -l)
-     	if [[ $pory_exists -eq 0 ]]; 
-     	then
-     		inc_exists=$(find $directory -name $"scripts.inc" | wc -l)
-     		if [[ $inc_exists -ne 0 ]]; 
-     		then
-     			echo "Converting: $directory/scripts.inc"
-     			touch "$directory/scripts.pory"
-     			echo 'raw `' >> "$directory/scripts.pory"
-     			cat "$directory/scripts.inc" >> "$directory/scripts.pory"
-     			echo '`' >> "$directory/scripts.pory"
-     		fi
-     	fi 	
-     done
-     ```
-  
-  2. Run `chmod 777 convert_inc.sh` to ensure the script executable. 
-
-  Finally you can execute it in your `pokeemerald/` directory by running `./convert_inc.sh` or `bash convert_inc.sh` in the console. This script will iterate through all your `data/map/` directories and convert the `scripts.inc` files into `scripts.pory` files by adding a `raw` tag around the old scripts. `convert_inc.sh` will skip over any directories that already have `scripts.pory` files in them, so that it will not overwrite any maps that you have already switched over to Poryscript.
-</details>
-
-3. Update `make_tools.mk` with the same change:
 ```diff
--TOOLDIRS := $(filter-out tools/agbcc tools/binutils,$(wildcard tools/*))
-+TOOLDIRS := $(filter-out tools/agbcc tools/binutils tools/poryscript,$(wildcard tools/*))
+- TOOL_NAMES := bin2c gbafix gbagfx jsonproc mapjson mid2agb preproc ramscrgen rsfont scaninc wav2agb
++ TOOL_NAMES := bin2c gbafix gbagfx jsonproc mapjson mid2agb preproc ramscrgen rsfont scaninc wav2agb poryscript
+```
+
+3. Make the changes to `Makefile` as described above in [Basic Installation](#basic-installation).
+
+4. Commit your changes and push to the remote.
+
+This installation method necessitates some changes in your project's workflow. When cloning your project to a fresh local copy, you should specify the `--recursive` option, which will ensure that Poryscript is checked out alongside your repository:
+
+```bash
+git clone --recursive https://github.com/YOUR_USERNAME/pokeemerald.git
+```
+
+After receiving the updates to integrate the submodule, existing local copies of the repository must do the following:
+
+```bash
+git submodule update --init
+```
+
+Finally, if/when new changes are pushed to Poryscript that you wish to receive, update the submodule like you would any other Git repository:
+
+```bash
+cd tools/poryscript
+git fetch
+git checkout REF # REF can be a version tag, a branch, or a commit hash
+cd -
+git add tools/poryscript
+git commit
+git push
+```
+
+5. (optional) Update `build.yml` so that Continuous Integration can run Poryscript.
+If you want Github CI to automatically build and test your project, edit `.github/workflows/build.yml` to add:
+
+```diff
+    - name: Checkout repository
+      uses: actions/checkout@v2
++     with:
++       submodules: recursive
 ```
 
 ## Convert Existing Scripts
@@ -182,6 +211,14 @@ If you're working on a large project, you may want to convert all of the existin
 
   Finally you can execute it in your `pokeemerald/` directory by running `./convert_inc.sh` or `bash convert_inc.sh` in the console. This script will iterate through all your `data/map/` directories and convert the `scripts.inc` files into `scripts.pory` files by adding a `raw` tag around the old scripts. `convert_inc.sh` will skip over any directories that already have `scripts.pory` files in them, so that it will not overwrite any maps that you have already switched over to Poryscript.
 </details>
+
+## Using Poryscript in Your Favorite IDE or Text Editor <a id='extensions'></a>
+
+For VS Code, you can install the [Poryscript extension](https://marketplace.visualstudio.com/items?itemName=karathan.poryscript), which provides quality-of-life improvements such as autocomplete, syntax highlighting, and error diagnostics.
+
+For other editors with [Tree-sitter](https://tree-sitter.github.io/tree-sitter/) support (e.g. emacs, neovim, lapce, zed, helix, etc.), some Poryscript bindings are supported here: https://github.com/Elsie19/treesitter-poryscript
+
+There is also a [plugin](https://plugins.jetbrains.com/plugin/28746-poryscript) available for Jetbrains IDEs such as IntelliJ or CLion.
 
 # Poryscript Syntax (How to Write Scripts)
 
@@ -255,14 +292,14 @@ Compound boolean expressions are also supported. This means you can use the AND 
 ```
     # Basic AND of two conditions.
     if (!defeated(TRAINER_MISTY) && var(VAR_TIME) != DAY) {
-        msgbox("The Cerulean Gym's doors don't\n"
-               "open until morning.")
+        msgbox("The Cerulean Gym's doors don't
+                open until morning.")
     }
     ...
     # Group nested conditions together with another set of parentheses.
     if (flag(FLAG_IS_CHAMPION) && !(flag(FLAG_SYS_TOWER_GOLD) || flag(FLAG_SYS_DOME_GOLD))) {
-        msgbox("You should try to beat the\n"
-               "Battle Tower or Battle Dome!")
+        msgbox("You should try to beat the
+                Battle Tower or Battle Dome!")
     }
 ```
 
@@ -298,12 +335,12 @@ The `while` statement can also be written as an infinite loop by omitting the bo
 `break` can be used to break out of a loop, like many programming languages. Similary, `continue` returns to the start of the loop.
 
 ### Conditional Operators
-The condition operators have strict rules about what conditions they accept. The operand on the left side of the condition must be a `flag()`, `var()`, or `defeated()` check. They each have a different set of valid comparison operators, described below.
+The condition operators have strict rules about what conditions they accept. The operand on the left side of the condition must be a `flag()`, `var()`, `defeated()`, or [AutoVar](#autovar-commands) check. They each have a different set of valid comparison operators, described below.
 
 | Type | Valid Operators |
 | ---- | --------------- |
 | `flag` | `==` |
-| `var` | `==`, `!=`, `>`, `>=`, `<`, `<=` |
+| `var` or [AutoVar](#autovar-commands) | `==`, `!=`, `>`, `>=`, `<`, `<=` |
 | `defeated` | `==` |
 
 All operators support implicit truthiness, which means you don't have to specify any of the above operators in a condition. Below are some examples of equivalent conditions:
@@ -407,6 +444,50 @@ MyScript_End:
 }
 ```
 
+## Strings
+
+Poryscript uses double-quoted strings (`"..."`) for all text content. Strings behave differently depending on whether they are written on a single line or span multiple lines in the source file. Poryscript automatically adds the `$` terminator character to text, so the user doesn't need to manually type it all the time.
+
+### Auto Strings
+
+When a string spans multiple lines in your source file, Poryscript automatically inserts the appropriate line-break commands (`\n`, `\l`, `\p`). Leading whitespace on each continuation line is stripped, so you can indent your text to match the surrounding code.
+
+```
+script MyScript {
+    msgbox("Hello, I'm the first line,
+            and I'm the second line,
+            and this is the third.
+
+            This is a new paragraph because
+            of the blank line above.")
+}
+```
+Becomes:
+```
+.string "Hello, I'm the first line,\n"
+.string "and I'm the second line,\l"
+.string "and this is the third.\p"
+.string "This is a new paragraph because\n"
+.string "of the blank line above.$"
+```
+
+### Manual Strings
+
+Multiple single-line strings written next to each other are added together. Each separate quoted string begins on a new `.string` line in the output. This is useful when you want explicit control over line breaks rather than using auto strings, it's personal preference:
+```
+msgbox("Hello, I'm the first line.\n"
+       "and I'm the second line,\l"
+       "and this is the third.\p"
+       "This is a new paragraph.")
+```
+Becomes:
+```
+.string "Hello, I'm the first line.\n"
+.string "and I'm the second line,\l"
+.string "and this is the third.\p"
+.string "This is a new paragraph.$"
+```
+
 ## `text` Statement
 Use `text` to include text that's intended to be shared between multiple scripts or in C code. The `text` statement is just a convenient way to write chunks of text, and it exports the text globally, so it is accessible in C code. Currently, there isn't much of a reason to use `text`, but it will be more useful in future updates of Poryscript.
 ```
@@ -415,14 +496,15 @@ script MyScript {
 }
 
 text MyText {
-    "Hello, there.\p"
-    "You can refer to me in scripts or C code."
+    "Hello, there.
+     You can refer to me in scripts or C code."
 }
 ```
-A small quality-of-life feature is that Poryscript automatically adds the `$` terminator character to text, so the user doesn't need to manually type it all the time.
 
 ### Automatic Text Formatting
-Text auto-formatting is also supported by Poryscript. The `format()` function can be wrapped around any text, either inline or `text`, and Poryscript will automatically fit the text to the size of the in-game text window by inserting automatic line breaks. A simple example:
+Text auto-formatting is also supported by Poryscript, though the resulting text line breaks will lack style, so it's more useful for quick an dirty formatting to guarantee your text will fit in the game's text box width. This is done with the `format()` function.
+
+The `format()` function can be wrapped around any manual string, either inline or `text`, and Poryscript will automatically fit the text to the size of the in-game text window by inserting automatic line breaks. **Note that `format()` can't be used with auto strings because their formatting intentions inherently conflict.** A simple example:
 ```
 msgbox(format("Hello, this is some long text that I want Poryscript to automatically format for me."))
 ```
@@ -446,6 +528,14 @@ Becomes:
 .string "Amazing!\p"
 .string "So glad to meet you!$"
 ```
+
+Additionally, `format()` supports a special line break `\N`, which will automatically insert the appropriate `\n` or `\l` line break. While this is an uncommon use case, it's useful in situations where a line break is desired for dramatic/stylistic purposes. In the following example, we want explicit line breaks for the `"..."` texts, but we don't know if the first one should use `\n` or `\l`. Using `\N` makes it easy:
+```
+text MyText {
+    format("You are my favorite trainer!\N...\N...\N...\NBut I'm better!")
+}
+```
+
 The font id can optionally be specified as the second parameter to `format()`.
 ```
 text MyText {
@@ -460,6 +550,10 @@ Becomes:
 .string "So glad to meet you!$"
 ```
 The font configuration JSON file informs Poryscript how many pixels wide each character in the message is, as well as setting a default maximum line length. Fonts have different character widths, and games have different text box sizes. For convenience, Poryscript comes with `font_config.json`, which contains the configuration for pokeemerald's `1_latin` font as `1_latin_rse`, as well as pokefirered's equivalent as `1_latin_frlg`. More fonts can be added to this file by simply creating anothing font id node under the `fonts` key in `font_config.json`.
+
+`cursorOverlapWidth` can be used to ensure there is always enough room for the cursor icon to be displayed in the text box. (This "cursor icon" is the small icon that's shown when the player needs to press A to advance the text box.)
+
+`numLines` is the number of lines displayed within a single message box. If editing text for a taller space, this can be adjusted in `font_config.json`.
 
 The length of a line can optionally be specified as the third parameter to `format()` if a font id was specified as the second parameter.
 
@@ -481,38 +575,61 @@ Becomes:
 .string "you!$"
 ```
 
-### Custom Text Encoding
-When Poryscript compiles text, the resulting text content is rendered using the `.string` assembler directive. The decomp projects' build process then processes those `.string` directives and substituted the string characters with the game-specific text representation. It can be useful to specify different types of strings, though. For example, implementing print-debugging commands might make use of ASCII text. Poryscript allows you to specify which assembler directive to use for text. Simply add the directive as a prefix to the string content like this:
-```
-ascii"My ASCII string."
-custom"My Custom string."
-
-// compiles to...
-.ascii "My ASCII string.\0"
-.custom "My Custom string."
-```
-
-Note that Poryscript will automatically add the `\0` suffix character to ASCII strings. It will **not** add suffix to any other directives.
-
-The length of a line can optionally be specified as the third parameter to `format()` if a font id was specified as the second parameter.
-
+Finally, `format()` takes the following optional named parameters, which override settings from the font config:
+- `fontId`
+- `maxLineLength`
+- `numLines`
+- `cursorOverlapWidth`
 ```
 text MyText {
-    format("Hello, are you the real-live legendary {PLAYER} that everyone talks about?\pAmazing!\pSo glad to meet you!", "1_latin", 100)
+    format("This is an example of named parameters!", numLines=3, maxLineLength=100)
 }
 ```
-Becomes:
+
+### Text Replacements
+Poryscript can automatically replace shorthand patterns in your strings with their expanded forms. This is useful for characters that are annoying to type (like `♂`, `♀`, `é`) or for shorthand commands (like `{PAUSE_30}`). Replacements are defined in the `textReplacements` array in `font_config.json` and are applied to all text.
+
+Each replacement entry has a `pattern` and a `replacement`. By default, patterns are matched as plain strings. Set `"regex": true` to use a Go-flavored regular expression with capture group support (`$1`, `$2`, etc.).
+
+The included `font_config.json` comes with the following default replacements:
+
+| Pattern | Replacement | Description |
+|---------|-------------|-------------|
+| `\e` | `é` | Accented e |
+| `\.` | `…` | Ellipsis |
+| `\au` | `{UP_ARROW}` | Up arrow |
+| `\ad` | `{DOWN_ARROW}` | Down arrow |
+| `\ar` | `{RIGHT_ARROW}` | Right arrow |
+| `\al` | `{LEFT_ARROW}` | Left arrow |
+| `\m` | `♂` | Male symbol |
+| `\f` | `♀` | Female symbol |
+| `\qo` | `“` | Opening curly quote |
+| `\qc` | `”` | Closing curly quote |
+| `\h<delay>` | `{PAUSE_<delay>}` | Pause command (regex) |
+
+For example, this Poryscript text:
 ```
-.string "Hello, are you the\n"
-.string "real-live\l"
-.string "legendary\l"
-.string "{PLAYER} that\l"
-.string "everyone talks\l"
-.string "about?\p"
-.string "Amazing!\p"
-.string "So glad to meet\n"
-.string "you!$"
+text MyText {
+    "Pok\emon said \qoHello!\qc\. \h30Boy\m or Girl\f?"
+}
 ```
+
+compiles as if you had written:
+```
+text MyText {
+    "Pokémon said “Hello!”… {PAUSE_30}Boy♂ or Girl♀?"
+}
+```
+
+You can add your own replacements to `font_config.json`:
+```json
+"textReplacements": [
+    {"pattern": "\\e", "replacement": "é"},
+    {"pattern": "\\\\h(\\d+)", "replacement": "{PAUSE_$1}", "regex": true}
+]
+```
+
+Note that JSON requires double-escaping backslashes. A literal `\e` pattern is written as `"\\e"` in JSON. For regex patterns that need to match a literal backslash (like `\h`), use `"\\\\h"` in JSON.
 
 ### Custom Text Encoding
 When Poryscript compiles text, the resulting text content is rendered using the `.string` assembler directive. The decomp projects' build process then processes those `.string` directives and substituted the string characters with the game-specific text representation. It can be useful to specify different types of strings, though. For example, implementing print-debugging commands might make use of ASCII text. Poryscript allows you to specify which assembler directive to use for text. Simply add the directive as a prefix to the string content like this:
@@ -560,6 +677,30 @@ MyMovement:
 	walk_up
 	face_down
 	step_end
+```
+
+However, movement can also be *inlined* inside commands similar to text, using the `moves()` operator. This is often much more convenient, and it can help simplify your scripts. Anything that can be used in a `movement` statement can also be used inside `moves()`.
+
+Looking at the previous example, the movement can be inlined like this:
+```
+script MyScript {
+    lock
+    applymovement(2, moves(
+        walk_left
+        walk_up * 5
+        face_down
+    ))
+    waitmovement(0)
+    release
+}
+```
+Note, whitespace doesn't matter. This can also be written all on a single line:
+```
+applymovement(2, moves(walk_left walk_up * 5 face_down))
+
+// You can even use commas to separate each movement command, since
+// that may be easier to read.
+applymovement(2, moves(walk_left, walk_up * 5, face_down))
 ```
 
 ## `mart` Statement
@@ -659,10 +800,9 @@ TestMap_MapScripts::
 script MyScript {
     lock
     faceplayer
-    # Text can span multiple lines. Use a new set of quotes for each line.
-    msgbox("This is shorter text,\n"
-           "but we can still put it\l"
-           "on multiple lines.")
+    msgbox("This is shorter text,
+            but we can still put it
+            on multiple lines.")
     applymovement(OBJ_EVENT_ID_PLAYER, MyScript_Movement)
     waitmovement(0)
     msgbox(MyScript_LongText)
@@ -704,7 +844,7 @@ const ASSISTANT_ID = PROF_BIRCH_ID + 1
 const FLAG_GREETED_BIRCH = FLAG_TEMP_2
 
 script ProfBirchScript {
-    applymovement(PROF_BIRCH_ID, BirchMovementData)
+    applymovement(PROF_BIRCH_ID, moves(walk_left * 4, face_down))
     showobject(ASSISTANT_ID)
     setflag(FLAG_GREETED_BIRCH)
 }
@@ -766,6 +906,65 @@ The top-level statements have different default scopes. They are as follows:
 | `movement` | Local |
 | `mart` | Local |
 | `mapscripts` | Global |
+
+## AutoVar Commands
+Some scripting commands always store their result in the same variable. For example, `checkitem` always stores its result in `VAR_RESULT`. Poryscript can simplify working with these commands with a concept called "AutoVar" commands.
+
+*Without* using an AutoVar, a script would be written like this:
+```
+checkitem(ITEM_ROOT_FOSSIL)
+if (var(VAR_RESULT) == TRUE) {
+    // player has the Root Fossil
+}
+```
+
+However, AutoVars can be used *inside* the condition, which helps streamline the script:
+```
+if (checkitem(ITEM_ROOT_FOSSIL) == TRUE) {
+    // player has the Root Fossil
+}
+```
+
+AutoVars can be used ***anywhere*** a `var()` operator can be used.  e.g. `if` conditions, `switch` statements--any boolean expression!
+
+### Defining AutoVar Commands
+AutoVar commands are fully configurable with the `command_config.json` file.  Use the `-cc` command line parameter to specifying the location of that config.
+
+There are two types of AutoVar commands:
+1. Implicit
+    - The stored var is defined in the config file, and is not present in the authored script.
+    - Examples: `checkitem`, `getpartysize`, `random`
+2. Explicit
+    - The stored var is provided as part of the command, and the config file stores the 0-based index of the command that specifies the stored var.
+    - Examples: `specialvar`, `checkcoins`
+
+Let's take a look at the example config file:
+```json
+// command_config.json
+{
+    "autovar_commands": {
+        "specialvar": {
+            "var_name_arg_position": 0
+        },
+        "checkitem": {
+            "var_name": "VAR_RESULT"
+        },
+    ...
+}
+```
+
+With the above config, a script could be written like so:
+```
+if (checkitem(ITEM_POKEBLOCK_CASE)) {
+    if (specialvar(VAR_RESULT, GetFirstFreePokeblockSlot) != -1 && 
+        specialvar(VAR_RESULT, PlayerHasBerries)
+    ) {
+        msgbox("Great! You can use the Berry Blender!)
+    }
+} else {
+    msgbox("You don't have a Pokeblock case!")
+}
+```
 
 ## Compile-Time Switches
 Use the `poryswitch` statement to change compiler behavior depending on custom switches. This makes it easy to make scripts behave different depending on, say, the `GAME_VERSION` or `LANGUAGE`. Any content that does not match the compile-time switch will not be included in the final output. To define custom switches, use the `-s` option when running `poryscript`.  You can specify multiple switches, and each key/value pair must be separated by an equals sign. For example:
@@ -835,6 +1034,9 @@ Note, `poryswitch` can also be embedded inside inlined `mapscripts` scripts.
 
 ## Optimization
 By default, Poryscript produces optimized output. It attempts to minimize the number of `goto` commands and unnecessary script labels. To disable optimizations, pass the `-optimize=false` option to `poryscript`.
+
+## Line Markers
+By default, Poryscript includes [C Preprocessor line markers](https://gcc.gnu.org/onlinedocs/gcc-3.0.2/cpp_9.html) in the compiled output.  This improves error messages.  To disable line markers, specify `-lm=false` when invoking Poryscript.
 
 # Local Development
 

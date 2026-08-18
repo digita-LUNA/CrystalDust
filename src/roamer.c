@@ -94,7 +94,7 @@ void RegenerateRaikou(void)
 
     CreateMonWithIVsPersonality(mon, SPECIES_RAIKOU, 40, roamer->ivs, roamer->personality);
 
-    roamer->hp = GetMonData(&mon, MON_DATA_MAX_HP);
+    roamer->hp = GetMonData(mon, MON_DATA_MAX_HP);
     roamer->status = 0;
     roamer->active = TRUE;
 }
@@ -106,7 +106,7 @@ void RegenerateEntei(void)
 
     CreateMonWithIVsPersonality(mon, SPECIES_ENTEI, 40, roamer->ivs, roamer->personality);
 
-    roamer->hp = GetMonData(&mon, MON_DATA_MAX_HP);
+    roamer->hp = GetMonData(mon, MON_DATA_MAX_HP);
     roamer->status = 0;
     roamer->active = TRUE;
 }
