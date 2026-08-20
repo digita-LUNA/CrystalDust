@@ -1,6 +1,6 @@
 # Pokémon CrystalDust
 
-This is a ROM hack of Pokémon Emerald that aims to recreate Pokémon Crystal on the GBA, as if Game Freak had remade it themselves at that time. This is an unofficial fork that adds missing tracks to CrystalDust for now.
+This is a ROM hack of Pokémon Emerald that aims to recreate Pokémon Crystal on the GBA, as if Game Freak had remade it themselves at that time. This is an unofficial fork that adds missing tracks to CrystalDust for now, alongside unofficial graphical updates.
 
 [**View the FAQ**](https://github.com/Deokishisu/CrystalDust/blob/progress/FAQ.md)
 
@@ -53,6 +53,8 @@ S. S. Aqua
 Sprites:
 [Youngster and bug catcher](https://github.com/digita-LUNA/CrystalDust),
 [Janine](https://github.com/PokemonHnS-Development/pokemonHnS),
+[Backsprites and Overworld Sprites](https://x.com/hyo_oppa),
+[Kris Overworld Sprites](https://www.spriters-resource.com/custom_edited/pokemongeneration2customs/asset/488043/)
 Rest of the sprites from DMA server
 
 
