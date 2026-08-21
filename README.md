@@ -9,7 +9,7 @@ To set up the repository, see [INSTALL.md](INSTALL.md).
 This project is based on [**pokeemerald**](https://github.com/pret/pokeemerald), a decompilation of Pokémon Emerald.
 
 
-## Links
+## Links and Credits
 
 [DoMoreAwesome](https://domoreaweso.me)
 
@@ -49,6 +49,9 @@ Liquid Crystal:
 Battle! (Trainer - Kanto),
 Route 12,
 S. S. Aqua
+
+Tiles:
+[Lighthouse](https://www.deviantart.com/ekat99/art/Pokmon-Tower-876100200)
 
 Sprites:
 [Youngster and bug catcher](https://github.com/digita-LUNA/CrystalDust),
